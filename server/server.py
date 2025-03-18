@@ -1,11 +1,12 @@
 import random
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional
+from typing import Literal
 
-import websockets
+from dataclasses_json import dataclass_json
 
 
+@dataclass_json
 @dataclass(frozen=True)
 class Coords:
     int_repr: int
@@ -62,15 +63,6 @@ class WhichPhase(Enum):
     P2_TURN = "P2 Turn"
 
 
-def color_cell(cell_content: str, color: Color | str) -> str:
-    esc = color if isinstance(color, str) else COLOR_CODES[color]
-    return RESET_CODE + esc + cell_content
-
-
-def row(cells: list[str]) -> str:
-    return "".join(cells) + RESET_CODE
-
-
 class InvalidAction:
     message: str
 
@@ -78,19 +70,37 @@ class InvalidAction:
         self.message = message
 
 
+Cell = Color | Literal["Thaler"] | None
+
+
+@dataclass_json
 @dataclass
 class GameState:
-    pegs: dict[Color, Coords]
+    pegs: dict[Color, Coords] = field(
+        metadata={
+            "dataclasses_json": {
+                "encoder": lambda d: {k.value: v.int_repr for k, v in d.items()},
+                "decoder": lambda d: {Color(int(k)): Coords(v) for k, v in d.items()},
+            }
+        }
+    )
     thaler_pos: Coords
     current_player: int
     current_phase: WhichPhase
-    p1_color: Optional[Color] = None
-    p2_color: Optional[Color] = None
+    p1_color: Color | None = None
+    p2_color: Color | None = None
 
-    def __init__(self):
-        self.thaler_pos, self.pegs = generate_peg_positions()
-        self.current_player = 0
-        self.current_phase = WhichPhase.SELECTING
+    @classmethod
+    def create(cls):
+        thaler_pos, pegs = generate_peg_positions()
+        current_player = 0
+        current_phase = WhichPhase.SELECTING
+        return cls(
+            thaler_pos=thaler_pos,
+            pegs=pegs,
+            current_player=current_player,
+            current_phase=current_phase,
+        )
 
     def to_board(self) -> str:
         board = [
@@ -118,6 +128,36 @@ class GameState:
             case WhichPhase.P1_TURN | WhichPhase.P2_TURN:
                 return InvalidAction("Game is already running!")
 
+    def move_is_valid(self, color: Color, dst: Coords):
+
+
+    def make_player_move(
+        self, which_player: Literal[1, 2], color: Color, dst: Coords
+    ) -> None | InvalidAction:
+        match self.current_phase:
+            case WhichPhase.SELECTING:
+                return InvalidAction("Can't make move when initializing!")
+            case WhichPhase.P1_TURN if which_player == 1:
+                if self.move_is_valid(color, dst):
+                    self.pegs[color] = dst
+            case WhichPhase.P2_TURN if which_player == 2:
+                if self.move_is_valid(color, dst):
+                    self.pegs[color] = dst
+            case _:
+                return InvalidAction(f"It's not Player {which_player}'s turn!")
+
+    def make_player_guess(self):
+        pass
+
+
+def color_cell(cell_content: str, color: Color | str) -> str:
+    esc = color if isinstance(color, str) else COLOR_CODES[color]
+    return RESET_CODE + esc + cell_content
+
+
+def row(cells: list[str]) -> str:
+    return "".join(cells) + RESET_CODE
+
 
 def generate_peg_positions() -> tuple[Coords, dict[Color, Coords]]:
     all_pos = random.sample(list(range(0, 49)), k=8)
@@ -127,6 +167,8 @@ def generate_peg_positions() -> tuple[Coords, dict[Color, Coords]]:
 
 
 if __name__ == "__main__":
-    init_state = GameState()
+    init_state = GameState.create()
     print(init_state)
     print(init_state.to_board())
+    print(init_state.to_json())
+    print(init_state.from_json(init_state.to_json()))
