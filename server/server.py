@@ -5,6 +5,7 @@ from typing import Optional
 
 import websockets
 
+
 @dataclass(frozen=True)
 class Coords:
     int_repr: int
@@ -39,19 +40,21 @@ class Color(Enum):
             case self.__class__.WHITE:
                 return "W"
 
+
 COLOR_CODES = {
     Color.RED: "\033[31m",
     Color.BLUE: "\033[34m",
     Color.GREEN: "\033[32m",
     Color.YELLOW: "\033[33m",
     Color.ORANGE: "\033[38;5;214m",  # ANSI code for orange
-    Color.PINK: "\033[38;5;213m",    # ANSI code for pink
+    Color.PINK: "\033[38;5;213m",  # ANSI code for pink
     Color.WHITE: "\033[37m",
 }
 
 RESET_CODE = "\033[0m"
 
 THALER_CODE = "\033[47m"
+
 
 class WhichPhase(Enum):
     SELECTING = "Selecting"
@@ -63,14 +66,17 @@ def color_cell(cell_content: str, color: Color | str) -> str:
     esc = color if isinstance(color, str) else COLOR_CODES[color]
     return RESET_CODE + esc + cell_content
 
+
 def row(cells: list[str]) -> str:
     return "".join(cells) + RESET_CODE
+
 
 class InvalidAction:
     message: str
 
     def __init__(self, message: str):
         self.message = message
+
 
 @dataclass
 class GameState:
@@ -81,7 +87,6 @@ class GameState:
     p1_color: Optional[Color] = None
     p2_color: Optional[Color] = None
 
-
     def __init__(self):
         self.thaler_pos, self.pegs = generate_peg_positions()
         self.current_player = 0
@@ -89,20 +94,18 @@ class GameState:
 
     def to_board(self) -> str:
         board = [
-            color_cell("  ", [RESET_CODE, "\033[100m"][idx % 2])
-            for idx in range(0, 49)
+            color_cell("  ", [RESET_CODE, "\033[100m"][idx % 2]) for idx in range(0, 49)
         ]
         for color, peg in self.pegs.items():
             board[peg.int_repr] = color_cell(
                 f"{color.to_string()} ", COLOR_CODES[color]
             )
         board[self.thaler_pos.int_repr] = color_cell(f"T ", THALER_CODE)
-        rows = [row(board[r:r+7]) for r in range(0, 49, 7)]
+        rows = [row(board[r : r + 7]) for r in range(0, 49, 7)]
         return "\n".join(rows)
 
-
     def make_player_choice(
-            self, which_player: Literal[1, 2], which_color: Color
+        self, which_player: Literal[1, 2], which_color: Color
     ) -> None | InvalidAction:
         match self.current_phase:
             case WhichPhase.SELECTING:
@@ -115,11 +118,10 @@ class GameState:
             case WhichPhase.P1_TURN | WhichPhase.P2_TURN:
                 return InvalidAction("Game is already running!")
 
+
 def generate_peg_positions() -> tuple[Coords, dict[Color, Coords]]:
     all_pos = random.sample(list(range(0, 49)), k=8)
-    color_pos = {
-        Color(idx): Coords(pos) for idx, pos in enumerate(all_pos[:7])
-    }
+    color_pos = {Color(idx): Coords(pos) for idx, pos in enumerate(all_pos[:7])}
     thaler_pos = Coords(all_pos[7])
     return thaler_pos, color_pos
 
