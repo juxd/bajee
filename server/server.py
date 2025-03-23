@@ -14,6 +14,18 @@ class Coords:
     def to_xy(self) -> tuple[int, int]:
         return (self.int_repr // 7), (self.int_repr % 7)
 
+    def add_xy(self, dx: int, dy: int) -> "Coords" | None:
+        x, y = self.to_xy()
+        x, y = x + dx, y + dy
+        if not (0 <= x < 7 and 0 <= y < 7):
+            return None
+        return self.__class__(x * 7 + y)
+
+    def distance_from(self, other: "Coords") -> int:
+        x1, y1 = self.to_xy()
+        x2, y2 = other.to_xy()
+        return max(abs(x1 - x2), abs(y1 - y2))
+
 
 class Color(Enum):
     RED = 0
@@ -128,21 +140,53 @@ class GameState:
             case WhichPhase.P1_TURN | WhichPhase.P2_TURN:
                 return InvalidAction("Game is already running!")
 
-    def move_is_valid(self, color: Color, dst: Coords):
+        max(abs(tx - x), abs(ty - y))
 
+    def valid_moves(self, color):
+        def is_closer_to_thaler_than_current(new_coord: Coord) -> bool:
+            return new_coord.distance_from(self.thaler_pos) < self.pegs[
+                color
+            ].distance_from(self.thaler_pos)
+
+        deltas = [
+            (up_down, left_right)
+            for up_down in [-1, 0, 1]
+            for left_right in [-1, 0, 1]
+            if (up_down, left_right) != (0, 0)
+        ]
+        valid_moves = []
+        for x, y in deltas:
+            if (
+                new_coord := self.pegs[color].add_xy(x, y)
+                and new_coord not in self.pegs.values()
+                and new_coord != self.thaler_pos
+                and is_closer_to_thaler_than_current(new_coord)
+            ):
+                valid_moves.append(new_coord)
+            if (
+                new_coord2 := self.pegs[color].add_xy(x * 2, y * 2)
+                and (skipped := self.pegs[color].add_xy(x, y)) not in self.pegs.values()
+                and is_closer_to_thaler_than_current(new_coord)
+            ):
+                valid_moves.append(new_coord2)
+        return valid_moves
 
     def make_player_move(
         self, which_player: Literal[1, 2], color: Color, dst: Coords
-    ) -> None | InvalidAction:
+    ) -> InvalidAction | None:
         match self.current_phase:
             case WhichPhase.SELECTING:
                 return InvalidAction("Can't make move when initializing!")
             case WhichPhase.P1_TURN if which_player == 1:
-                if self.move_is_valid(color, dst):
+                if dst not in self.valid_moves(color):
                     self.pegs[color] = dst
+                else:
+                    return InvalidAction("You bruh'd with an invalid move")
             case WhichPhase.P2_TURN if which_player == 2:
-                if self.move_is_valid(color, dst):
+                if dst not in self.valid_moves(color):
                     self.pegs[color] = dst
+                else:
+                    return InvalidAction("You bruh'd with an invalid move")
             case _:
                 return InvalidAction(f"It's not Player {which_player}'s turn!")
 
