@@ -1,7 +1,7 @@
 import random
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Literal
+from typing import cast, Literal
 
 from dataclasses_json import dataclass_json
 
@@ -12,14 +12,14 @@ class Coords:
     int_repr: int
 
     def to_xy(self) -> tuple[int, int]:
-        return (self.int_repr // 7), (self.int_repr % 7)
+        return (self.int_repr % 7), (self.int_repr // 7)
 
-    def add_xy(self, dx: int, dy: int) -> "Coords" | None:
+    def add_xy(self, dx: int, dy: int) -> "Coords | None":
         x, y = self.to_xy()
         x, y = x + dx, y + dy
         if not (0 <= x < 7 and 0 <= y < 7):
             return None
-        return self.__class__(x * 7 + y)
+        return self.__class__(y * 7 + x)
 
     def distance_from(self, other: "Coords") -> int:
         x1, y1 = self.to_xy()
@@ -29,10 +29,10 @@ class Coords:
 
 class Color(Enum):
     RED = 0
-    GREEN = 1
-    BLUE = 2
-    ORANGE = 3
-    YELLOW = 4
+    ORANGE = 1
+    YELLOW = 2
+    GREEN = 3
+    BLUE = 4
     PINK = 5
     WHITE = 6
 
@@ -73,6 +73,7 @@ class WhichPhase(Enum):
     SELECTING = "Selecting"
     P1_TURN = "P1 Turn"
     P2_TURN = "P2 Turn"
+    GAME_ENDED = "Game ended"
 
 
 class InvalidAction:
@@ -83,6 +84,8 @@ class InvalidAction:
 
 
 Cell = Color | Literal["Thaler"] | None
+
+MaybeGameEnded = Literal["P1_won", "P2_won", "Not_yet"]
 
 
 @dataclass_json
@@ -137,13 +140,11 @@ class GameState:
                     self.p2_color = which_color
                 if self.p1_color is not None and self.p2_color is not None:
                     self.current_phase = WhichPhase.P1_TURN
-            case WhichPhase.P1_TURN | WhichPhase.P2_TURN:
+            case WhichPhase.P1_TURN | WhichPhase.P2_TURN | WhichPhase.GAME_ENDED:
                 return InvalidAction("Game is already running!")
 
-        max(abs(tx - x), abs(ty - y))
-
-    def valid_moves(self, color):
-        def is_closer_to_thaler_than_current(new_coord: Coord) -> bool:
+    def valid_moves(self, color: Color) -> list[Coords]:
+        def is_closer_to_thaler_than_current(new_coord: Coords) -> bool:
             return new_coord.distance_from(self.thaler_pos) < self.pegs[
                 color
             ].distance_from(self.thaler_pos)
@@ -154,44 +155,76 @@ class GameState:
             for left_right in [-1, 0, 1]
             if (up_down, left_right) != (0, 0)
         ]
-        valid_moves = []
+        valid_moves: list[Coords] = []
         for x, y in deltas:
             if (
-                new_coord := self.pegs[color].add_xy(x, y)
+                (new_coord := self.pegs[color].add_xy(x, y)) is not None
                 and new_coord not in self.pegs.values()
-                and new_coord != self.thaler_pos
                 and is_closer_to_thaler_than_current(new_coord)
             ):
                 valid_moves.append(new_coord)
             if (
-                new_coord2 := self.pegs[color].add_xy(x * 2, y * 2)
+                (new_coord2 := self.pegs[color].add_xy(x * 2, y * 2)) is not None
+                and new_coord2 not in self.pegs.values()
                 and (skipped := self.pegs[color].add_xy(x, y)) not in self.pegs.values()
-                and is_closer_to_thaler_than_current(new_coord)
+                and is_closer_to_thaler_than_current(new_coord2)
             ):
                 valid_moves.append(new_coord2)
         return valid_moves
 
     def make_player_move(
         self, which_player: Literal[1, 2], color: Color, dst: Coords
-    ) -> InvalidAction | None:
+    ) -> MaybeGameEnded | InvalidAction:
         match self.current_phase:
             case WhichPhase.SELECTING:
                 return InvalidAction("Can't make move when initializing!")
             case WhichPhase.P1_TURN if which_player == 1:
-                if dst not in self.valid_moves(color):
-                    self.pegs[color] = dst
-                else:
-                    return InvalidAction("You bruh'd with an invalid move")
+                pass
             case WhichPhase.P2_TURN if which_player == 2:
-                if dst not in self.valid_moves(color):
-                    self.pegs[color] = dst
-                else:
-                    return InvalidAction("You bruh'd with an invalid move")
+                pass
             case _:
                 return InvalidAction(f"It's not Player {which_player}'s turn!")
+        if dst not in self.valid_moves(color):
+            self.pegs[color] = dst
+        else:
+            return InvalidAction("You bruh'd with an invalid move")
+        matching_thaler = [
+            color for color, coords in self.pegs.items() if coords == self.thaler_pos
+        ]
+        if not matching_thaler:
+            return "Not_yet"
+        matching_thaler = matching_thaler[0]
+        match matching_thaler, matching_thaler, self.current_phase:
+            case self.p1_color, self.p2_color, WhichPhase.P1_TURN:
+                return "P2_won"
+            case self.p1_color, _, WhichPhase.P1_TURN:
+                return "P1_won"
+            case self.p2_color, self.p1_color, WhichPhase.P2_TURN:
+                return "P1_won"
+            case self.p2_color, _, WhichPhase.P2_TURN:
+                return "P2_won"
+            case _, _, WhichPhase.P1_TURN:
+                return "P2_won"
+            case _, _, WhichPhase.P2_TURN:
+                return "P1_won"
 
-    def make_player_guess(self):
-        pass
+    def make_player_guess(
+        self, which_player: Literal[1, 2], guess_of_other: Color
+    ) -> MaybeGameEnded | InvalidAction:
+        match self.current_phase:
+            case WhichPhase.SELECTING:
+                return InvalidAction("Can't make move when initializing!")
+            case WhichPhase.P1_TURN if which_player == 1:
+                pass
+            case WhichPhase.P2_TURN if which_player == 2:
+                pass
+            case _:
+                return InvalidAction(f"It's not Player {which_player}'s turn!")
+        other_player_color = cast(
+            Color, self.p2_color if which_player == 1 else self.p1_color
+        )
+        won, lost = ("P1_won", "P2_won") if which_player == 1 else ("P2_won", "P1_won")
+        return won if other_player_color == guess_of_other else lost
 
 
 def color_cell(cell_content: str, color: Color | str) -> str:
