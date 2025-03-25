@@ -143,9 +143,10 @@
               cell.classList.add('cell');
               cell.id = `cell-${i}`;
               cell.dataset.index = i;
+              cell.dataset.piece = "";
               cell.addEventListener("click", (evt) => {
                   if (lastPickedColor && connected) {
-                      ws.send(JSON.stringify(["make_player_move", { color: lastPickedColor; dst: i }]));
+                      ws.send(JSON.stringify(["make_player_move", { color: lastPickedColor, dst: i }]));
                       return;
                   }
                   if (!cell.dataset.piece || cell.dataset.piece == "thaler") {
@@ -170,7 +171,10 @@
       };
 
       function populateBoard(pegs, thaler) {
-          for (const cell in document.getElementById('board').children) {
+          for (const cell of document.getElementById('board').children) {
+              if (cell.dataset && !('piece' in cell.dataset)) {
+                  continue;
+              }
               cell.dataset.piece = null;
               cell.style.removeProperty("background-color");
           }
