@@ -131,40 +131,71 @@
 
     <script>
       let player1Color = null, player2Color = null;
+      let lastPickedColor = null;
+
+      let connected = false;
+      const ws = new WebSocket(`ws://${window.location.hostname}:8765`);
 
       function generateBoard() {
           const board = document.getElementById('board');
           for (let i = 0; i < 49; i++) {
               const cell = document.createElement('div');
               cell.classList.add('cell');
-              cell.dataset.index = i;  // Assign an index for tracking
-              cell.addEventListener("click", function() { placeThaler(i); }); // Add click event to each cell
+              cell.id = `cell-${i}`;
+              cell.dataset.index = i;
+              cell.addEventListener("click", (evt) => {
+                  if (lastPickedColor && connected) {
+                      ws.send(JSON.stringify(["make_player_move", { color: lastPickedColor; dst: i }]));
+                      return;
+                  }
+                  if (!cell.dataset.piece || cell.dataset.piece == "thaler") {
+                      return;
+                  }
+                  lastPickedColor = cell.dataset
+              });
               board.appendChild(cell);
           }
       }
 
       generateBoard();
 
-      const color = { 0: ""};
+      const colors = {
+          "R": "red",
+          "O": "orange",
+          "Y": "yellow",
+          "G": "green",
+          "B": "blue",
+          "P": "pink",
+          "U": "purple",
+      };
 
-      function populateBoard(pegs) {
+      function populateBoard(pegs, thaler) {
+          for (const cell in document.getElementById('board').children) {
+              cell.dataset.piece = null;
+              cell.style.removeProperty("background-color");
+          }
+
           Object.entries(pegs).forEach(([color, index]) => {
-              const x = index % 7;
-              const y = Math.floor(index / 7);
-              const cell = document.getElementById('board').children[y * 7 + x]; // Get the correct cell
+              const cell = document.getElementById('board').children[index];
               if (cell) {
-                  cell.style.backgroundColor = color;
-                  cell.dataset.filled = "true"; // Mark as filled
+                  cell.style.backgroundColor = colors[color];
+                  cell.dataset.piece = "color";
               }
           });
+          // thaler
+          document.getElementById('board').children[thaler];
+          if (cell) {
+              cell.style.backgroundColor = grey;
+              cell.dataset.filled = "true";
+          }
       }
 
-      const ws = new WebSocket(`ws://${window.location.hostname}:8765`);
       let player = Math.random() < 0.5 ? 1 : 2;
       let selectedColor = null;
 
       ws.onopen = (event) => {
-          ws.send(JSON.stringify(["hello", { player }]));  // Send message when connection opens
+          connected = true;
+          ws.send(JSON.stringify(["hello", { player }]));
       }
 
       ws.onmessage = (event) => {
@@ -177,11 +208,11 @@
 
           if (data[0] == "try_again") {
               player = 2 - (player - 1) % 2
-              ws.send(JSON.stringify(["hello", { player }]));  // Ask to retry if necessary
+              ws.send(JSON.stringify(["hello", { player }]));
           }
 
           if (data.__magic__ == "game_state") {
-              populateBoard(data.pegs);  // Populate board based on received game state
+              populateBoard(data.pegs, data.thaler_pos.int_repr);
           }
 
           if (data.type === 'colorConfirmed' && data.player === player) {
@@ -197,16 +228,15 @@
           if (selectedColor) return alert("You've already picked a color!");
           selectedColor = color;
           document.getElementById("subtitle").innerText = "Waiting for other player...";
-          ws.send(JSON.stringify([ "make_player_choice", { player, color }])); // Send color choice
+          ws.send(JSON.stringify([ "make_player_choice", { player, color }]));
       }
 
       function placeThaler(dst) {
           if (!gameStarted || document.getElementById(`cell-${dst}`).dataset.filled === "true") return;
-          ws.send(JSON.stringify([ "make_player_move", { dst, color: "R" }])); // Send move action
+          ws.send(JSON.stringify([ "make_player_move", { dst, color: "R" }]));
       }
 
     </script>
 
   </body>
 </html>
-]

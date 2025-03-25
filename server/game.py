@@ -107,7 +107,7 @@ class GameState:
         metadata={
             "dataclasses_json": {
                 "encoder": lambda d: {k.value: v.int_repr for k, v in d.items()},
-                "decoder": lambda d: {Color(int(k)): Coords(v) for k, v in d.items()},
+                "decoder": lambda d: {Color.of_string(k): Coords(v) for k, v in d.items()},
             }
         }
     )
