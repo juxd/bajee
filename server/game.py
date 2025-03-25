@@ -51,7 +51,7 @@ class Color(Enum):
             case self.__class__.PINK:
                 return "P"
             case self.__class__.PURPLE:
-                return "W"
+                return "U"
 
     @classmethod
     def of_string(cls, s: str) -> Self | None:
@@ -62,7 +62,7 @@ class Color(Enum):
             "G": cls.GREEN,
             "B": cls.BLUE,
             "P": cls.PINK,
-            "W": cls.PURPLE,
+            "U": cls.PURPLE,
         }
         return mapping.get(s)
 
@@ -90,11 +90,9 @@ class WhichPhase(Enum):
     GAME_ENDED = "Game ended"
 
 
+@dataclass
 class InvalidAction:
     message: str
-
-    def __init__(self, message: str):
-        self.message = message
 
 
 Cell = Color | Literal["Thaler"] | None
@@ -114,7 +112,6 @@ class GameState:
         }
     )
     thaler_pos: Coords
-    current_player: int
     current_phase: WhichPhase = WhichPhase.WAITING_FOR_START
     p1_color: Color | None = None
     p2_color: Color | None = None
@@ -123,12 +120,9 @@ class GameState:
     @classmethod
     def create(cls) -> Self:
         thaler_pos, pegs = generate_peg_positions()
-        current_player = 0
         return cls(
             thaler_pos=thaler_pos,
             pegs=pegs,
-            current_player=current_player,
-            current_phase=current_phase,
         )
 
     def to_board(self) -> str:
