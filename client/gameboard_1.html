@@ -50,8 +50,12 @@
         display: flex;
         align-items: center;
         justify-content: center;
-        border: 1px solid gray;
+        border: 0px solid gray;
         cursor: pointer;
+      }
+      .cell.highlighted {
+        border: 10px solid gray;
+        box-sizing: border-box;
       }
       .color-selection {
         display: flex;
@@ -111,8 +115,7 @@
           <div class="color-option" style="background-color: purple;" onclick="chooseColor('P')"></div>
           <div class="color-option" style="background-color: pink;" onclick="chooseColor('U')"></div>
         </div>
-        <p><strong>Player 1: <span id="player1-color">None</span></strong></p>
-        <p><strong>Player 2: <span id="player2-color">None</span></strong></p>
+        <p><strong><span id="player-label"></span>&nbsp;<span id="player-color">None</span></strong></p>
         <button onclick="confirmColors()">Confirm Colors</button>
       </div>
     </div>
@@ -129,118 +132,7 @@
       </div>
     </div>
 
-    <script>
-      let player1Color = null, player2Color = null;
-      let lastPickedColor = null;
-
-      let connected = false;
-      const ws = new WebSocket(`ws://${window.location.hostname}:8765`);
-
-      function generateBoard() {
-          const board = document.getElementById('board');
-          for (let i = 0; i < 49; i++) {
-              const cell = document.createElement('div');
-              cell.classList.add('cell');
-              cell.id = `cell-${i}`;
-              cell.dataset.index = i;
-              cell.dataset.piece = "";
-              cell.addEventListener("click", (evt) => {
-                  if (lastPickedColor && connected) {
-                      ws.send(JSON.stringify(["make_player_move", { color: lastPickedColor, dst: i }]));
-                      return;
-                  }
-                  if (!cell.dataset.piece || cell.dataset.piece == "thaler") {
-                      return;
-                  }
-                  lastPickedColor = cell.dataset
-              });
-              board.appendChild(cell);
-          }
-      }
-
-      generateBoard();
-
-      const colors = {
-          "R": "red",
-          "O": "orange",
-          "Y": "yellow",
-          "G": "green",
-          "B": "blue",
-          "P": "pink",
-          "U": "purple",
-      };
-
-      function populateBoard(pegs, thaler) {
-          for (const cell of document.getElementById('board').children) {
-              if (cell.dataset && !('piece' in cell.dataset)) {
-                  continue;
-              }
-              cell.dataset.piece = null;
-              cell.style.removeProperty("background-color");
-          }
-
-          Object.entries(pegs).forEach(([color, index]) => {
-              const cell = document.getElementById('board').children[index];
-              if (cell) {
-                  cell.style.backgroundColor = colors[color];
-                  cell.dataset.piece = "color";
-              }
-          });
-          // thaler
-          document.getElementById('board').children[thaler];
-          if (cell) {
-              cell.style.backgroundColor = grey;
-              cell.dataset.filled = "true";
-          }
-      }
-
-      let player = Math.random() < 0.5 ? 1 : 2;
-      let selectedColor = null;
-
-      ws.onopen = (event) => {
-          connected = true;
-          ws.send(JSON.stringify(["hello", { player }]));
-      }
-
-      ws.onmessage = (event) => {
-          const data = JSON.parse(event.data);
-          console.log(data);
-
-          if (data[0] == "error") {
-              console.log("error", data[1]);
-          }
-
-          if (data[0] == "try_again") {
-              player = 2 - (player - 1) % 2
-              ws.send(JSON.stringify(["hello", { player }]));
-          }
-
-          if (data.__magic__ == "game_state") {
-              populateBoard(data.pegs, data.thaler_pos.int_repr);
-          }
-
-          if (data.type === 'colorConfirmed' && data.player === player) {
-              document.getElementById("subtitle").innerText = "Waiting for other player...";
-          }
-
-          if (data.type === 'thalerPlaced') {
-              document.getElementById(`cell-${data.position}`).style.backgroundColor = "gray";
-          }
-      };
-
-      function chooseColor(color) {
-          if (selectedColor) return alert("You've already picked a color!");
-          selectedColor = color;
-          document.getElementById("subtitle").innerText = "Waiting for other player...";
-          ws.send(JSON.stringify([ "make_player_choice", { player, color }]));
-      }
-
-      function placeThaler(dst) {
-          if (!gameStarted || document.getElementById(`cell-${dst}`).dataset.filled === "true") return;
-          ws.send(JSON.stringify([ "make_player_move", { dst, color: "R" }]));
-      }
-
-    </script>
+    <script src="game.js"></script>
 
   </body>
 </html>

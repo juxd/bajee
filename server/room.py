@@ -8,15 +8,20 @@ from dataclasses_json import dataclass_json
 import game
 import websockets
 
-Action = Literal["make_player_choice", "make_player_move", "make_player_guess"]
+Action = Literal[
+    "make_player_choice", "make_player_move", "make_player_guess", "request_moves"
+]
+
 
 def is_action(s: Any) -> TypeGuard[Action]:
     return s in get_args(Action)
+
 
 @dataclass_json
 @dataclass(frozen=True, kw_only=True)
 class GameStateForClient:
     __magic__: Literal["game_state"] = "game_state"
+    you_are: Literal[1, 2]
     pegs: dict[game.Color, game.Coords] = field(
         metadata={
             "dataclasses_json": {
@@ -31,8 +36,9 @@ class GameStateForClient:
     current_phase: game.WhichPhase
 
     @classmethod
-    def of_game_state(cls, game_state: game.GameState) -> Self:
+    def of_game_state(cls, game_state: game.GameState, you_are: Literal[1, 2]) -> Self:
         return cls(
+            you_are=you_are,
             pegs=game_state.pegs,
             thaler_pos=game_state.thaler_pos,
             current_phase=game_state.current_phase,
@@ -65,8 +71,18 @@ class Room:
             self.game_state.current_phase = game.WhichPhase.SELECTING
 
     async def update_clients(self) -> None:
-        state: str = GameStateForClient.of_game_state(self.game_state).to_json()
-        _ = await asyncio.gather(*[conn.send(state) for conn in [self.p1, self.p2] if conn])
+        def state(you_are: Literal[1, 2]) -> str:
+            return GameStateForClient.of_game_state(
+                self.game_state, you_are=you_are
+            ).to_json()
+
+        _ = await asyncio.gather(
+            *[
+                conn.send(state(cast(Literal[1, 2], you_are)))
+                for (you_are, conn) in [(1, self.p1), (2, self.p2)]
+                if conn
+            ]
+        )
         return
 
     async def process_message(
@@ -88,10 +104,9 @@ class Room:
                 ):
                     return game.InvalidAction("no valid color")
                 result = self.game_state.make_player_choice(which_player, color)
-                await ws.send(json.dumps(["color_confirmed", { "player" : which_player}]))
+                await ws.send(json.dumps(["color_confirmed", {"player": which_player}]))
 
             case "make_player_move":
-                # Handle player move action
                 if not (color := data.get("color")) or not (
                     color := game.Color.of_string(color)
                 ):
@@ -103,12 +118,20 @@ class Room:
                 )
 
             case "make_player_guess":
-                # Handle player guess action
                 if not (color := data.get("color")) or not (
                     color := game.Color.of_string(color)
                 ):
                     return game.InvalidAction("no valid color")
                 result = self.game_state.make_player_guess(which_player, color)
+
+            case "request_moves":
+                if not (color := data.get("color")) or not (
+                    color := game.Color.of_string(color)
+                ):
+                    return game.InvalidAction("no valid color")
+                moves = [c.int_repr for c in self.game_state.valid_moves(color)]
+                await ws.send(json.dumps(["valid_moves", {"moves": moves}]))
+                result = None
         await self.update_clients()
         return result
 
@@ -125,7 +148,9 @@ def handler(room: Room) -> Callable[[websockets.ServerConnection], Awaitable[Non
                 header: str
                 header, content = json.loads(hello)
                 if header != "hello":
-                    await ws.send(json.dumps(["try_again", f"expected hello but got: {header}"]))
+                    await ws.send(
+                        json.dumps(["try_again", f"expected hello but got: {header}"])
+                    )
                     continue
                 try:
                     which_player = cast(Literal[1, 2], int(content["player"]))
@@ -135,6 +160,7 @@ def handler(room: Room) -> Callable[[websockets.ServerConnection], Awaitable[Non
                         await ws.send(json.dumps(["try_again", bad_conn]))
                         print("error: ", bad_conn)
                         continue
+                    await ws.send(json.dumps(["hello_okay", {"you_are": which_player}]))
                     break
                 except Exception:
                     continue

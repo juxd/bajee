@@ -107,7 +107,9 @@ class GameState:
         metadata={
             "dataclasses_json": {
                 "encoder": lambda d: {k.value: v.int_repr for k, v in d.items()},
-                "decoder": lambda d: {Color.of_string(k): Coords(v) for k, v in d.items()},
+                "decoder": lambda d: {
+                    Color.of_string(k): Coords(v) for k, v in d.items()
+                },
             }
         }
     )
@@ -155,9 +157,9 @@ class GameState:
 
     def valid_moves(self, color: Color) -> list[Coords]:
         def is_closer_to_thaler_than_current(new_coord: Coords) -> bool:
-            return new_coord.distance_from(self.thaler_pos) < self.pegs[
-                color
-            ].distance_from(self.thaler_pos)
+            before = self.pegs[color].distance_from(self.thaler_pos)
+            after = new_coord.distance_from(self.thaler_pos)
+            return after < before
 
         deltas = [
             (up_down, left_right)
@@ -176,7 +178,7 @@ class GameState:
             if (
                 (new_coord2 := self.pegs[color].add_xy(x * 2, y * 2)) is not None
                 and new_coord2 not in self.pegs.values()
-                and (skipped := self.pegs[color].add_xy(x, y)) not in self.pegs.values()
+                and (skipped := self.pegs[color].add_xy(x, y)) in self.pegs.values()
                 and is_closer_to_thaler_than_current(new_coord2)
             ):
                 valid_moves.append(new_coord2)
@@ -205,7 +207,7 @@ class GameState:
                 pass
             case _:
                 return InvalidAction(f"It's not Player {which_player}'s turn!")
-        if dst not in self.valid_moves(color):
+        if dst in self.valid_moves(color):
             self.pegs[color] = dst
         else:
             return InvalidAction("You bruh'd with an invalid move")
