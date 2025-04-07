@@ -1,6 +1,15 @@
 let lastPickedColor = null;
-
 let connected = false;
+let player = 1;
+let selectedColor = null;
+
+// Generate a unique player ID (e.g., using localStorage to persist across sessions)
+let playerId = localStorage.getItem("playerId");
+if (!playerId) {
+    playerId = `player-${Math.random().toString(36).substr(2, 9)}`;
+    localStorage.setItem("playerId", playerId);
+}
+
 const ws = new WebSocket(`ws://${window.location.hostname}:8765`);
 
 function generateBoard() {
@@ -13,7 +22,7 @@ function generateBoard() {
         cell.dataset.piece = "";
         cell.addEventListener("click", (evt) => {
             if (lastPickedColor && connected && !cell.dataset.piece) {
-                ws.send(JSON.stringify(["make_player_move", { color: lastPickedColor, dst: i }]));
+                ws.send(JSON.stringify(["make_player_move", { color: lastPickedColor, dst: i, playerId }]));
                 removeBoardHighlights();
                 return;
             }
@@ -21,7 +30,7 @@ function generateBoard() {
                 return;
             }
             lastPickedColor = cell.dataset.piece;
-            ws.send(JSON.stringify(["request_moves", { color: lastPickedColor }]));
+            ws.send(JSON.stringify(["request_moves", { color: lastPickedColor, playerId }]));
         });
         board.appendChild(cell);
     }
@@ -78,13 +87,11 @@ function highlightSuggestedBoard(highlighted) {
     });
 }
 
-let player = 1;
-let selectedColor = null;
-
 ws.onopen = (event) => {
     connected = true;
-    ws.send(JSON.stringify(["hello", { player }]));  // Send message to server indicating the player has connected
-}
+    // Send a reconnect message with the player ID
+    ws.send(JSON.stringify(["reconnect", { playerId }]));
+};
 
 ws.onmessage = (event) => {
     const data = JSON.parse(event.data);
@@ -100,7 +107,7 @@ ws.onmessage = (event) => {
             console.log("room full :(");
             return;
         }
-        ws.send(JSON.stringify(["hello", { player }]));
+        ws.send(JSON.stringify(["hello", { player, playerId }]));
     }
 
     if (data.__magic__ == "game_state") {
@@ -123,11 +130,18 @@ ws.onmessage = (event) => {
     if (data[0] == "valid_moves") {
         highlightSuggestedBoard(data[1].moves);
     }
+
+    if (data[0] == "reconnect_success") {
+        // Restore game state after reconnecting
+        populateBoard(data[1].pegs, data[1].thaler);
+        document.getElementById("subtitle").innerText = data[1].subtitle || "Reconnected!";
+        selectedColor = data[1].selectedColor || null;
+    }
 };
 
 function chooseColor(color) {
     if (selectedColor) return alert("You've already picked a color!");
     selectedColor = color;
     document.getElementById("subtitle").innerText = "Waiting for other player...";
-    ws.send(JSON.stringify([ "make_player_choice", { player, color }]));
+    ws.send(JSON.stringify(["make_player_choice", { player, color, playerId }]));
 }
