@@ -85,6 +85,7 @@ THALER_CODE = "\033[47m"
 class WhichPhase(Enum):
     WAITING_FOR_START = "Waiting for start"
     SELECTING = "Selecting"
+    PLACING_THALER = ""
     P1_TURN = "P1 Turn"
     P2_TURN = "P2 Turn"
     GAME_ENDED = "Game ended"
@@ -150,7 +151,7 @@ class GameState:
                     self.p2_color = which_color
                 if self.p1_color is not None and self.p2_color is not None:
                     self.current_phase = WhichPhase.P1_TURN
-            case WhichPhase.WAITING_FOR_START:
+            case WhichPhase.PLACING_THALER | WhichPhase.WAITING_FOR_START:
                 return InvalidAction("Not started yet!")
             case WhichPhase.P1_TURN | WhichPhase.P2_TURN | WhichPhase.GAME_ENDED:
                 return InvalidAction("Game is already running!")
@@ -159,7 +160,7 @@ class GameState:
         def is_closer_to_thaler_than_current(new_coord: Coords) -> bool:
             before = self.pegs[color].distance_from(self.thaler_pos)
             after = new_coord.distance_from(self.thaler_pos)
-            return after < before
+            return after <= before
 
         deltas = [
             (up_down, left_right)
@@ -195,17 +196,30 @@ class GameState:
                     else WhichPhase.P2_TURN
                 )
 
+    def place_thaler(self, which_player: Literal[1, 2], dst: Coords):
+        match self.current_state:
+            case WhichPhase.SELECTING | WhichPhase.WAITING_FOR_START:
+                return InvalidAction("Can't make move when initializing!")
+            case WhichPhase.GAME_ENDED:
+                return InvalidAction("Game is already over!")
+            case WhichPhase.P1_TURN | WhichPhase.P2_TURN:
+
+
     def make_player_move(
         self, which_player: Literal[1, 2], color: Color, dst: Coords
     ) -> None | InvalidAction:
         match self.current_phase:
             case WhichPhase.SELECTING | WhichPhase.WAITING_FOR_START:
                 return InvalidAction("Can't make move when initializing!")
+            case WhichPhase.GAME_ENDED:
+                return InvalidAction("Game is already over!")
+            case WhichPhase.PLACING_THALER:
+                return InvalidAction("Still placing thaler!")
             case WhichPhase.P1_TURN if which_player == 1:
                 pass
             case WhichPhase.P2_TURN if which_player == 2:
                 pass
-            case _:
+            case WhichPhase.P1_TURN | WhichPhase.P2_TURN:
                 return InvalidAction(f"It's not Player {which_player}'s turn!")
         if dst in self.valid_moves(color):
             self.pegs[color] = dst
@@ -240,11 +254,15 @@ class GameState:
         match self.current_phase:
             case WhichPhase.SELECTING | WhichPhase.WAITING_FOR_START:
                 return InvalidAction("Can't make move when initializing!")
+            case WhichPhase.GAME_ENDED:
+                return InvalidAction("Game is already over!")
+            case WhichPhase.PLACING_THALER:
+                return InvalidAction("Still placing thaler!")
             case WhichPhase.P1_TURN if which_player == 1:
                 pass
             case WhichPhase.P2_TURN if which_player == 2:
                 pass
-            case _:
+            case WhichPhase.P1_TURN | WhichPhase.P2_TURN:
                 return InvalidAction(f"It's not Player {which_player}'s turn!")
         other_player_color = cast(
             Color, self.p2_color if which_player == 1 else self.p1_color
